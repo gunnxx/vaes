@@ -10,7 +10,7 @@ class GaussianEncoder(nn.Module):
   def __init__(self, model_args: model_args_dtype) -> None:
     super(GaussianEncoder, self).__init__()
 
-    self.base_layers = nn.Sequential([instantiate_layer(lt, lp) for lt, lp in model_args[:-1]])
+    self.base_layers = nn.Sequential(*[instantiate_layer(lt, lp) for lt, lp in model_args[:-1]])
     self.mu_layer = nn.Linear(**model_args[-1][1])
     self.logvar_layer = nn.Linear(**model_args[-1][1])
   

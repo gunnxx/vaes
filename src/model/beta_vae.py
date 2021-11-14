@@ -16,12 +16,13 @@ class BetaVAE(nn.Module):
     enc_model_args: model_args_dtype,
     dec_linear_model_args: model_args_dtype,
     dec_spatial_model_args: model_args_dtype,
-    dec_linear_to_spatial_shape: Tuple[int, int, int]) -> None:
+    dec_linear_to_spatial_shape: Tuple[int, int, int],
+    device: torch.device) -> None:
     super(BetaVAE, self).__init__()
 
     ## to weight losses
     self.beta = beta
-    self.loss_fn = nn.BCELoss()
+    self.loss_fn = nn.BCELoss(reduction='sum')
       
     ## encoder and decoder
     self.encoder = GaussianEncoder(enc_model_args)
@@ -30,8 +31,8 @@ class BetaVAE(nn.Module):
     
     ## normal prior as variational posterior target
     latent_dim = dec_linear_model_args[0][1]["in_features"]
-    mu = torch.zeros(latent_dim)
-    std = torch.ones(latent_dim)
+    mu = torch.zeros(latent_dim).to(device)
+    std = torch.ones(latent_dim).to(device)
     self.prior = d.Independent(d.Normal(mu, std), 1)
   
   """
@@ -50,8 +51,9 @@ class BetaVAE(nn.Module):
     reconstruction = self.decoder.forward(sample)
 
     ## compute loss
-    kld_loss = d.kl.kl_divergence(posterior, self.prior)
-    nll_loss = self.loss_fn(reconstruction, x)
+    batch_size = x.shape[0]
+    kld_loss = d.kl.kl_divergence(posterior, self.prior).mean()
+    nll_loss = self.loss_fn(reconstruction, x) / batch_size
     loss = self.beta * kld_loss + nll_loss
 
-    return loss.mean()
+    return loss
