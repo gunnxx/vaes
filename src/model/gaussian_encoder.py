@@ -10,7 +10,7 @@ class GaussianEncoder(nn.Module):
   def __init__(self, model_args: model_args_dtype) -> None:
     super(GaussianEncoder, self).__init__()
 
-    self.base_layers = [instantiate_layer(lt, lp) for lt, lp in model_args[:-1]]
+    self.base_layers = nn.Sequential([instantiate_layer(lt, lp) for lt, lp in model_args[:-1]])
     self.mu_layer = nn.Linear(**model_args[-1][1])
     self.logvar_layer = nn.Linear(**model_args[-1][1])
   
@@ -18,12 +18,11 @@ class GaussianEncoder(nn.Module):
   """
   def forward(self, x: torch.Tensor) -> d.Normal:
     ## base network
-    for layer in self.base_layers:
-      x = layer(x)
+    h = self.base_layers(x)
     
     ## mu and std of gaussian
-    mu = self.mu_layer(x)
-    logvar = self.logvar_layer(x)
+    mu = self.mu_layer(h)
+    logvar = self.logvar_layer(h)
     std = torch.exp(logvar * 0.5)
 
     ## note that `mu.shape = (batch_dim, embed_dim)`

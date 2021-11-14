@@ -15,22 +15,14 @@ class Decoder(nn.Module):
     spatial_model_args: model_args_dtype) -> None:
     super(Decoder, self).__init__()
     
-    self.linear_layers = [instantiate_layer(lt, lp) for lt, lp in linear_model_args]
-    self.spatial_layers = [instantiate_layer(lt, lp) for lt, lp in spatial_model_args]
+    self.linear_layers = nn.Sequential([instantiate_layer(lt, lp) for lt, lp in linear_model_args])
+    self.spatial_layers = nn.Sequential([instantiate_layer(lt, lp) for lt, lp in spatial_model_args])
     self.reshape_size = linear_to_spatial_shape
   
   """
   """
   def forward(self, x: torch.Tensor) -> d.Bernoulli:
-    ## forward on linear layers
-    for layer in self.linear_layers:
-      x = layer(x)
-    
-    ## reshape
-    h = x.view(-1, *self.reshape_size)
-
-    ## forward on spatial layers
-    for layer in self.spatial_layers:
-      h = layer(h)
-    
+    h = self.linear_layers(x)
+    h = h.view(-1, *self.reshape_size)
+    h = self.spatial_layers(h)
     return h
