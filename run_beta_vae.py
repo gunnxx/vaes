@@ -53,33 +53,59 @@ LOG_DIR = "experiment/beta-vae/" + DATA + EXP_NUMBER + "/"
 
 DEVICE = torch.device("cpu")
 BATCH_SIZE = 128
-EPOCHS = 2
+EPOCHS = 100
 LR = 1e-4
+PATIENCE = 10
 
 ## instantiate model and optimizer
-model = BetaVAE(BETA, ENC_MODEL_ARGS, DEC_LINEAR_MODEL_ARGS,
-  DEC_SPATIAL_MODEL_ARGS, DEC_LINEAR_TO_SPATIAL_SHAPE).to(DEVICE)
+model = BetaVAE(BETA, ENC_MODEL_ARGS, DEC_LINEAR_MODEL_ARGS, DEC_SPATIAL_MODEL_ARGS, DEC_LINEAR_TO_SPATIAL_SHAPE, DEVICE)
+model.to(DEVICE)
 model_optim = optim.Adam(model.parameters(), LR)
 
 ## ------------------ DATALOADER ------------------
 
-preprocessing = transforms.Compose([
-  transforms.ToTensor(),
-  transforms.Normalize(0, 255)
-])
-
 if DATA == "mnist":
+  preprocessing = transforms.Compose([transforms.ToTensor()])
+
   ## take MNIST dataset using `torchvision.datasets` and split into train, valid, and test
   train_ds = datasets.MNIST("data", train=True, download=True, transform=preprocessing)
   valid_ds = datasets.MNIST("data", train=False, download=True, transform=preprocessing)
-  valid_len = int(0.5 * len(valid_ds))
-  test_len  = len(valid_ds) - valid_len
-  valid_ds, test_ds = data.random_split(valid_ds, [valid_len, test_len])
 
-  ## take only the image part
-  train_ds = torch.cat([img.unsqueeze(0) for img, _ in train_ds]).to(DEVICE)
-  valid_ds = torch.cat([img.unsqueeze(0) for img, _ in valid_ds]).to(DEVICE)
-  test_ds = torch.cat([img.unsqueeze(0) for img, _ in test_ds]).to(DEVICE)
+  ## get the size
+  train_size = train_ds.shape[0]
+  valid_size = int(0.5 * len(valid_ds))
+  test_size  = len(valid_ds) - valid_size
+
+  ## split the dataset
+  partition = [valid_size, test_size]
+  valid_ds, test_ds = data.random_split(valid_ds, partition, torch.Generator().manual_seed(42))
+
+elif DATA == "celeba":
+  preprocessing = transforms.Compose([
+    transforms.CenterCrop(178),
+    transforms.Resize(128),
+    transforms.ToTensor()
+  ])
+
+  ## take the dataset under `data/celeba/img`
+  ds = datasets.ImageFolder("data/celeba", transform=preprocessing)
+  
+  ## get the size
+  train_size = int(0.8 * len(ds))
+  valid_size = int(0.1 * len(ds))
+  test_size = len(ds) - train_size - valid_size
+
+  ## split the dataset
+  partition = [train_size, valid_size, test_size]
+  train_ds, valid_ds, test_ds = data.random_split(ds, partition, torch.Generator().manual_seed(42))
+
+else:
+  raise Exception("DATA is not recognized.")
+
+## take only the image part
+train_ds = torch.cat([img.unsqueeze(0) for img, _ in train_ds]).to(DEVICE)
+valid_ds = torch.cat([img.unsqueeze(0) for img, _ in valid_ds]).to(DEVICE)
+test_ds = torch.cat([img.unsqueeze(0) for img, _ in test_ds]).to(DEVICE)
 
 ## create the dataloader
 train_dl = data.DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
@@ -99,7 +125,8 @@ CONFIG = {
   "epochs": EPOCHS,
   "learning_rate": LR,
   "log_dir": LOG_DIR,
-  "device": DEVICE.type
+  "device": str(DEVICE),
+  "patience": PATIENCE
 }
 
 os.makedirs(LOG_DIR)
@@ -112,36 +139,36 @@ train_loss_epochs = []
 valid_loss_epochs = []
 
 best_loss = np.inf
-early_stopping = EarlyStop(patience=3, warmup=10)
+early_stopping = EarlyStop(patience=PATIENCE)
 
 for epoch in tqdm.tqdm(range(EPOCHS)):
-  train_losses = []
-  valid_losses = []
+  train_loss = 0
+  valid_loss = 0
 
   ## training loop
   model.train()
   for batch in train_dl:
     model.zero_grad()
     
-    train_loss = model(batch)
-    train_losses.append(train_loss.item())
+    loss = model(batch)
+    train_loss += loss.item() * batch.shape[0]
     
-    train_loss.backward()
+    loss.backward()
     model_optim.step()
   
   ## validation loop
   model.eval()
   with torch.no_grad():
     for batch in valid_dl:
-      valid_loss = model(batch)
-      valid_losses.append(valid_loss.item())
+      loss = model(batch)
+      valid_loss += loss.item() * batch.shape[0]
   
   ## log the loss
-  avg_train_loss = np.array(train_losses).mean()
-  avg_valid_loss = np.array(valid_losses).mean()
+  avg_train_loss = train_loss / train_size
+  avg_valid_loss = valid_loss / valid_size
 
-  train_loss_epochs.append(avg_train_loss.item())
-  valid_loss_epochs.append(avg_valid_loss.item())
+  train_loss_epochs.append(avg_train_loss)
+  valid_loss_epochs.append(avg_valid_loss)
 
   tqdm.tqdm.write("Epoch %02d :: Tr-Loss %0.4f :: Vl-Loss %0.4f" %
     (epoch, train_loss_epochs[-1], valid_loss_epochs[-1]))
@@ -151,7 +178,8 @@ for epoch in tqdm.tqdm(range(EPOCHS)):
     "model": model.state_dict(),
     "optim": model_optim.state_dict(),
     "epoch": epoch,
-    "loss": train_loss
+    "train_loss": train_loss,
+    "valid_loss": valid_loss
   }
 
   ## latest model
@@ -177,41 +205,47 @@ tqdm.tqdm.write("Loading best model: epoch %02d & %0.4f validation loss" %
   (d["epoch"], d["loss"].item()))
 
 ## testing loop using best model
-test_losses = []
+test_loss = 0
 with torch.no_grad():
   for batch in test_dl:
-    test_loss = model(batch)
-    test_losses.append(test_loss.item())
+    loss = model(batch)
+    test_loss += loss.item() * batch.shape[0]
 
-tqdm.tqdm.write("Final Ts-Loss %0.4f" % np.array(test_losses).mean().item())
+tqdm.tqdm.write("Final Ts-Loss %0.4f" % (test_loss / test_size))
 
 ## ------------------ RECONSTRUCTION TEST ------------------
 
 if DATA == "mnist":
   ## this is carefully picked to cover 0-9 class
-  idx = [0, 8, 20, 22, 121, 124, 125, 130, 133, 137]
+  idx = [1, 12, 24, 44, 47, 48, 52, 78, 84, 116]
+  cmap = 'gray'
 
-  ## bacth the original image
-  original_img = torch.cat([test_ds[i].unsqueeze(0) for i in idx])
+elif DATA == "celeba":
+  ## carefully picked to compare with other hyperparams
+  idx = [8, 16, 32, 64]
+  cmap = ''
 
-  ## reconstruction
-  var_posterior = model.encoder(original_img)
-  reconstructed_img = model.decoder(var_posterior.mean)
+## bacth the original image
+original_img = torch.cat([test_ds[i].unsqueeze(0) for i in idx])
 
-  ## change to numpy to be visualized
-  original_img = original_img.detach().cpu().numpy()
-  reconstructed_img = reconstructed_img.detach().cpu().numpy()
+## reconstruction
+var_posterior = model.encoder(original_img)
+reconstructed_img = model.decoder(var_posterior.mean)
 
-  ## plot
-  n_row, n_col = 2, 10
-  f, axs = plt.subplots(n_row, n_col, figsize=(16, 6))
-  axs[0, n_col//2].set_title("Original Image")
-  axs[1, n_col//2].set_title("Reconstructed Image")
-  for j in range(len(idx)):
-    axs[0, j].imshow(original_img[j, 0], cmap='gray')
-    axs[1, j].imshow(reconstructed_img[j, 0], cmap='gray')
-    axs[0, j].axis('off')
-    axs[1, j].axis('off')
+## change to numpy to be visualized
+original_img = original_img.detach().cpu().numpy()
+reconstructed_img = reconstructed_img.detach().cpu().numpy()
+
+## plot
+n_row, n_col = 2, len(idx)
+f, axs = plt.subplots(n_row, n_col, figsize=(n_col*2, n_row*3))
+axs[0, n_col//2].set_title("Original Image")
+axs[1, n_col//2].set_title("Reconstructed Image")
+for j in range(len(idx)):
+  axs[0, j].imshow(original_img[j, 0], cmap='gray')
+  axs[1, j].imshow(reconstructed_img[j, 0], cmap='gray')
+  axs[0, j].axis('off')
+  axs[1, j].axis('off')
   
-  f.savefig(LOG_DIR + "reconstruction.png")
-  plt.close(f)
+f.savefig(LOG_DIR + "reconstruction.png")
+plt.close(f)
