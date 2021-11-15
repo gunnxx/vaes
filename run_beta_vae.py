@@ -103,9 +103,9 @@ else:
   raise Exception("DATA is not recognized.")
 
 ## take only the image part
-train_ds = torch.cat([img.unsqueeze(0) for img, _ in train_ds]).to(DEVICE)
-valid_ds = torch.cat([img.unsqueeze(0) for img, _ in valid_ds]).to(DEVICE)
-test_ds = torch.cat([img.unsqueeze(0) for img, _ in test_ds]).to(DEVICE)
+# train_ds = torch.cat([img.unsqueeze(0) for img, _ in train_ds]).to(DEVICE)
+# valid_ds = torch.cat([img.unsqueeze(0) for img, _ in valid_ds]).to(DEVICE)
+# test_ds = torch.cat([img.unsqueeze(0) for img, _ in test_ds]).to(DEVICE)
 
 ## create the dataloader
 train_dl = data.DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
@@ -147,11 +147,12 @@ for epoch in tqdm.tqdm(range(EPOCHS)):
 
   ## training loop
   model.train()
-  for batch in train_dl:
+  for imgs, _ in train_dl:
     model.zero_grad()
+    imgs = imgs.to(DEVICE)
     
-    loss = model(batch)
-    train_loss += loss.item() * batch.shape[0]
+    loss = model(imgs)
+    train_loss += loss.item() * imgs.shape[0]
     
     loss.backward()
     model_optim.step()
@@ -159,9 +160,10 @@ for epoch in tqdm.tqdm(range(EPOCHS)):
   ## validation loop
   model.eval()
   with torch.no_grad():
-    for batch in valid_dl:
-      loss = model(batch)
-      valid_loss += loss.item() * batch.shape[0]
+    for imgs, _ in valid_dl:
+      imgs = imgs.to(DEVICE)
+      loss = model(imgs)
+      valid_loss += loss.item() * imgs.shape[0]
   
   ## log the loss
   avg_train_loss = train_loss / train_size
@@ -207,9 +209,10 @@ tqdm.tqdm.write("Loading best model: epoch %02d & %0.4f validation loss" %
 ## testing loop using best model
 test_loss = 0
 with torch.no_grad():
-  for batch in test_dl:
-    loss = model(batch)
-    test_loss += loss.item() * batch.shape[0]
+  for imgs, _ in test_dl:
+    imgs = imgs.to(DEVICE)
+    loss = model(imgs)
+    test_loss += loss.item() * imgs.shape[0]
 
 tqdm.tqdm.write("Final Ts-Loss %0.4f" % (test_loss / test_size))
 
@@ -223,27 +226,35 @@ if DATA == "mnist":
 elif DATA == "celeba":
   ## carefully picked to compare with other hyperparams
   idx = [8, 16, 32, 64]
-  cmap = ''
+  cmap = None
 
 ## bacth the original image
-original_img = torch.cat([test_ds[i].unsqueeze(0) for i in idx])
+original_img = torch.cat([test_ds[i][0].unsqueeze(0) for i in idx])
 
 ## reconstruction
 var_posterior = model.encoder(original_img)
 reconstructed_img = model.decoder(var_posterior.mean)
 
-## change to numpy to be visualized
+## change shape and convert to numpy to be visualized
+if DATA == "mnist":
+  original_img = original_img.squeeze(1)
+  reconstructed_img = reconstructed_img.squeeze(1)
+
+elif DATA == "celeba":
+  original_img = original_img.moveaxis(1, -1)
+  reconstructed_img = reconstructed_img.moveaxis(1, -1)
+
 original_img = original_img.detach().cpu().numpy()
 reconstructed_img = reconstructed_img.detach().cpu().numpy()
 
 ## plot
 n_row, n_col = 2, len(idx)
-f, axs = plt.subplots(n_row, n_col, figsize=(n_col*2, n_row*3))
+f, axs = plt.subplots(n_row, n_col, figsize=(n_col*3, n_row*4))
 axs[0, n_col//2].set_title("Original Image")
 axs[1, n_col//2].set_title("Reconstructed Image")
 for j in range(len(idx)):
-  axs[0, j].imshow(original_img[j, 0], cmap='gray')
-  axs[1, j].imshow(reconstructed_img[j, 0], cmap='gray')
+  axs[0, j].imshow(original_img[j], cmap=cmap)
+  axs[1, j].imshow(reconstructed_img[j], cmap=cmap)
   axs[0, j].axis('off')
   axs[1, j].axis('off')
   
