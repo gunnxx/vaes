@@ -32,6 +32,8 @@ def instantiate_layer(ltype: str, lparams: Dict[str, Any]) -> nn.Module:
       layer = nn.Sigmoid()
     elif lparams == "tanh":
       layer = nn.Tanh()
+    elif lparams == "leakyrelu":
+      layer = nn.LeakyReLU(0.1)
   
   ## unregistered layer
   else:
