@@ -12,7 +12,6 @@ import torchvision.transforms as transforms
 
 from src.model.decoder import Decoder
 from src.model.info_discriminator import InfoDiscriminator
-from src.utils.early_stop import EarlyStop
 
 ## ------------------ HYPERPARAMETERS ------------------
 
@@ -21,46 +20,90 @@ LOG_DIR = "experiment/info-gan/" + DATA + EXP_NUMBER + "/"
 DEVICE = torch.device("cpu")
 
 NOISE_DIM = 16
-if DATA == "mnist": CODE_DIM = 12
-elif DATA == "celeba": CODE_DIM = 100
 
-DISC_MODEL_ARGS = [
-  ("conv2d", {"in_channels": 1, "out_channels": 32, "kernel_size": 4, "stride": 2}),
-  ("activation", "relu"),
-  ("conv2d", {"in_channels": 32, "out_channels": 64, "kernel_size": 4, "stride": 2}),
-  ("activation", "relu"),
-  ("conv2d", {"in_channels": 64, "out_channels": 64, "kernel_size": 4, "stride": 2}),
-  ("activation", "relu"),
-  ("flatten", None),
-  ("linear", {"in_features": 64, "out_features": 64}),
-  ("activation", "relu")
-]
+if DATA == "mnist":
+  CODE_DIM = 12
 
-GEN_LINEAR_MODEL_ARGS = [
-  ("linear", {"in_features": NOISE_DIM + CODE_DIM, "out_features": 64}),
-  ("activation", "relu")
-]
+  DISC_MODEL_ARGS = [
+    ("conv2d", {"in_channels": 1, "out_channels": 64, "kernel_size": 4, "stride": 2, "padding": 1}),
+    ("activation", "leakyrelu"),
+    ("conv2d", {"in_channels": 64, "out_channels": 128, "kernel_size": 4, "stride": 2, "padding": 1}),
+    ("batchnorm2d", {"num_features": 128}),
+    ("activation", "leakyrelu"),
+    ("flatten", None),
+    ("linear", {"in_features": 128*7*7, "out_features": 1024}),
+    ("batchnorm1d", {"num_features": 1024}),
+    ("activation", "leakyrelu")
+  ]
 
-GEN_SPATIAL_MODEL_ARGS = [
-  ("upsample", {"scale_factor": 4}),
-  ("conv2d", {"in_channels": 64, "out_channels": 64, "kernel_size": 3, "padding": "same"}),
-  ("activation", "relu"),
-  ("upsample", {"scale_factor": 4}),
-  ("conv2d", {"in_channels": 64, "out_channels": 32, "kernel_size": 3, "padding": "same"}),
-  ("activation", "relu"),
-  ("upsample", {"scale_factor": 2}),
-  ("conv2d", {"in_channels": 32, "out_channels": 32, "kernel_size": 3, "padding": "valid"}),
-  ("activation", "relu"),
-  ("conv2d", {"in_channels": 32, "out_channels": 1, "kernel_size": 3, "padding": "valid"}),
-  ("activation", "tanh")
-]
+  GEN_LINEAR_MODEL_ARGS = [
+    ("linear", {"in_features": NOISE_DIM + CODE_DIM, "out_features": 1024}),
+    ("batchnorm1d", {"num_features": 1024}),
+    ("activation", "relu"),
+    ("linear", {"in_features": 1024, "out_features": 128*7*7}),
+    ("batchnorm1d", {"num_features": 128*7*7}),
+    ("activation", "relu")
+  ]
 
-GEN_LINEAR_TO_SPATIAL_SHAPE = (64, 1, 1)
+  GEN_SPATIAL_MODEL_ARGS = [
+    ("convtranspose2d", {"in_channels": 128, "out_channels": 64, "kernel_size": 4, "stride": 2, "padding": 1}),
+    ("batchnorm2d", {"num_features": 64}),
+    ("activation", "relu"),
+    ("convtranspose2d", {"in_channels": 64, "out_channels": 1, "kernel_size": 4, "stride": 2, "padding": 1}),
+    ("activation", "tanh")
+  ]
+
+  GEN_LINEAR_TO_SPATIAL_SHAPE = (128, 7, 7)
+
+elif DATA == "celeba":
+  CODE_DIM = 100
+
+  DISC_MODEL_ARGS = [
+    ("conv2d", {"in_channels": 3, "out_channels": 32, "kernel_size": 4, "stride": 2, "padding": 1}),
+    ("activation", "leakyrelu"),
+    ("conv2d", {"in_channels": 32, "out_channels": 32, "kernel_size": 4, "stride": 2, "padding": 1}),
+    ("batchnorm2d", {"num_features": 32}),
+    ("activation", "leakyrelu"),
+    ("conv2d", {"in_channels": 32, "out_channels": 64, "kernel_size": 4, "stride": 2, "padding": 1}),
+    ("batchnorm2d", {"num_features": 64}),
+    ("activation", "leakyrelu"),
+    ("conv2d", {"in_channels": 64, "out_channels": 64, "kernel_size": 4, "stride": 2, "padding": 1}),
+    ("batchnorm2d", {"num_features": 64}),
+    ("activation", "leakyrelu"),
+    ("flatten", None),
+    ("linear", {"in_features": 64*8*8, "out_features": 1024}),
+    ("batchnorm1d", {"num_features": 1024}),
+    ("activation", "leakyrelu"),
+  ]
+
+  GEN_LINEAR_MODEL_ARGS = [
+    ("linear", {"in_features": NOISE_DIM + CODE_DIM, "out_features": 1024}),
+    ("batchnorm1d", {"num_features": 1024}),
+    ("activation", "relu"),
+    ("linear", {"in_features": 1024, "out_features": 64*8*8}),
+    ("batchnorm1d", {"num_features": 64*8*8}),
+    ("activation", "relu")
+  ]
+
+  GEN_SPATIAL_MODEL_ARGS = [
+    ("convtranspose2d", {"in_channels": 64, "out_channels": 64, "kernel_size": 4, "stride": 2, "padding": 1}),
+    ("batchnorm2d", {"num_features": 64}),
+    ("activation", "relu"),
+    ("convtranspose2d", {"in_channels": 64, "out_channels": 32, "kernel_size": 4, "stride": 2, "padding": 1}),
+    ("batchnorm2d", {"num_features": 32}),
+    ("activation", "relu"),
+    ("convtranspose2d", {"in_channels": 32, "out_channels": 32, "kernel_size": 4, "stride": 2, "padding": 1}),
+    ("batchnorm2d", {"num_features": 32}),
+    ("activation", "relu"),
+    ("convtranspose2d", {"in_channels": 32, "out_channels": 3, "kernel_size": 4, "stride": 2, "padding": 1}),
+    ("activation", "tanh")
+  ]
+
+  GEN_LINEAR_TO_SPATIAL_SHAPE = (64, 8, 8)
 
 BATCH_SIZE = 128
 EPOCHS = 1
 G_LR, D_LR, I_LR = 1e-4, 1e-4, 1e-4
-PATIENCE = 5
 
 ## ------------------ INSTANTIATE MODEL AND OPTIM ------------------
 
@@ -69,7 +112,7 @@ def weights_init_normal(m):
   if classname.find("Conv") != -1:
     torch.nn.init.normal_(m.weight.data, 0.0, 0.02)
   elif classname.find("BatchNorm") != -1:
-    torch.nn.init.normal_(m.weight.data, 1.0, 0.02)
+    torch.nn.init.normal_(m.weight.data, 0.0, 0.02)
     torch.nn.init.constant_(m.bias.data, 0.0)
 
 generator = Decoder(GEN_LINEAR_MODEL_ARGS, GEN_LINEAR_TO_SPATIAL_SHAPE, GEN_SPATIAL_MODEL_ARGS)
@@ -143,9 +186,7 @@ CONFIG = {
   "generator_learning_rate": G_LR,
   "discriminator_learning_rate": D_LR,
   "information_learning_rate": I_LR,
-  "log_dir": LOG_DIR,
-  "device": str(DEVICE),
-  "patience": PATIENCE
+  "device": str(DEVICE)
 }
 
 os.makedirs(LOG_DIR)
@@ -196,8 +237,6 @@ best_d_loss = float('inf')
 best_i_loss = float('inf')
 best_t_loss = float('inf')
 
-early_stopping = EarlyStop(patience=PATIENCE)
-
 ## losses
 discriminating_loss = nn.BCELoss()
 if DATA == "mnist":
@@ -214,7 +253,7 @@ for epoch in tqdm.tqdm(range(EPOCHS)):
   generator.train()
   discriminator.train()
 
-  for imgs, _ in tqdm.tqdm(train_dl, total=(train_size // BATCH_SIZE + 1)):
+  for imgs, _ in tqdm.tqdm(train_dl, total=(train_size // BATCH_SIZE) + 1, leave=False):
     bsz = imgs.shape[0]
     imgs = imgs.to(DEVICE)
     real = torch.ones(bsz, 1, device=DEVICE)
@@ -275,6 +314,8 @@ for epoch in tqdm.tqdm(range(EPOCHS)):
     g_loss_ += g_loss.item() * bsz
     d_loss_ += d_loss.item() * bsz
     i_loss_ += info_loss.item() * bsz
+
+    tqdm.tqdm.write("G %0.4f :: D %0.4f :: I %0.4f" % (g_loss.item(), d_loss.item(), info_loss.item()))
   
   ## log the loss
   avg_g_loss = g_loss_ / train_size
@@ -323,12 +364,6 @@ for epoch in tqdm.tqdm(range(EPOCHS)):
   if avg_t_loss < best_t_loss:
     best_t_loss = avg_t_loss
     torch.save(chkpt, LOG_DIR + "best_t.pt")
-  
-  ## check for early stopping
-  early_stopping(avg_t_loss)
-  if early_stopping.is_stop():
-    tqdm.tqdm.write("Early stop is called!")
-    break
 
 ## load best model
 d = torch.load(LOG_DIR + "best_t.pt", map_location=DEVICE)
