@@ -13,7 +13,7 @@ class InfoDiscriminator(nn.Module):
     super(InfoDiscriminator, self).__init__()
 
     ## ordinary discriminator
-    base_out_size = base_model_args[-2][1]["out_features"]
+    base_out_size = base_model_args[-3][1]["out_features"]
     self.base = nn.Sequential(*[instantiate_layer(lt, lp) for lt, lp in base_model_args])
     self.head = nn.Sequential(nn.Linear(base_out_size, 1), nn.Sigmoid())
 
@@ -26,7 +26,7 @@ class InfoDiscriminator(nn.Module):
 
     elif data == "celeba":
       self.code_heads = [
-        nn.Sequential(nn.Linear(base_out_size, 10), nn.Softmax()).to(device) for _ in range(10)
+        nn.Sequential(nn.Linear(base_out_size, 10), nn.Softmax(dim=-1)).to(device) for _ in range(10)
       ]
   
   """
