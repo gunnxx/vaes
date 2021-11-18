@@ -1,6 +1,5 @@
-import json, os, tqdm
+import csv, json, os, tqdm
 import matplotlib.pyplot as plt
-import numpy as np
 
 import torch
 import torch.optim as optim
@@ -13,45 +12,85 @@ from src.utils.early_stop import EarlyStop
 
 ## ------------------ HYPERPARAMETERS ------------------
 
-BETA = 1.
-LATENT_DIM = 16
-
-ENC_MODEL_ARGS = [
-  ("conv2d", {"in_channels": 1, "out_channels": 32, "kernel_size": 4, "stride": 2}),
-  ("activation", "relu"),
-  ("conv2d", {"in_channels": 32, "out_channels": 64, "kernel_size": 4, "stride": 2}),
-  ("activation", "relu"),
-  ("conv2d", {"in_channels": 64, "out_channels": 64, "kernel_size": 4, "stride": 2}),
-  ("activation", "relu"),
-  ("flatten", None),
-  ("linear", {"in_features": 64, "out_features": LATENT_DIM})
-]
-
-DEC_LINEAR_MODEL_ARGS = [
-  ("linear", {"in_features": LATENT_DIM, "out_features": 64}),
-  ("activation", "relu")
-]
-
-DEC_SPATIAL_MODEL_ARGS = [
-  ("upsample", {"scale_factor": 4}),
-  ("conv2d", {"in_channels": 64, "out_channels": 64, "kernel_size": 3, "padding": "same"}),
-  ("activation", "relu"),
-  ("upsample", {"scale_factor": 4}),
-  ("conv2d", {"in_channels": 64, "out_channels": 32, "kernel_size": 3, "padding": "same"}),
-  ("activation", "relu"),
-  ("upsample", {"scale_factor": 2}),
-  ("conv2d", {"in_channels": 32, "out_channels": 32, "kernel_size": 3, "padding": "valid"}),
-  ("activation", "relu"),
-  ("conv2d", {"in_channels": 32, "out_channels": 1, "kernel_size": 3, "padding": "valid"}),
-  ("activation", "sigmoid")
-]
-
-DEC_LINEAR_TO_SPATIAL_SHAPE = (64, 1, 1)
-
-DATA, EXP_NUMBER = "mnist", "0"
+DATA, EXP_NUMBER = "celeba", "5"
 LOG_DIR = "experiment/beta-vae/" + DATA + EXP_NUMBER + "/"
+DEVICE = torch.device("cuda:0")
 
-DEVICE = torch.device("cpu")
+BETA = 0.1
+
+if DATA == "celeba":
+  LATENT_DIM = 32
+
+  ENC_MODEL_ARGS = [
+    ("conv2d", {"in_channels": 3, "out_channels": 32, "kernel_size": 4, "stride": 2}),
+    ("activation", "relu"),
+    ("conv2d", {"in_channels": 32, "out_channels": 32, "kernel_size": 4, "stride": 2}),
+    ("activation", "relu"),
+    ("conv2d", {"in_channels": 32, "out_channels": 64, "kernel_size": 4, "stride": 2}),
+    ("activation", "relu"),
+    ("conv2d", {"in_channels": 64, "out_channels": 64, "kernel_size": 4, "stride": 2}),
+    ("activation", "relu"),
+    ("flatten", None),
+    ("linear", {"in_features": 64*6*6, "out_features": 256}),
+    ("activation", "relu"),
+    ("linear", {"in_features": 256, "out_features": LATENT_DIM})
+  ]
+
+  DEC_LINEAR_MODEL_ARGS = [
+    ("linear", {"in_features": LATENT_DIM, "out_features": 256}),
+    ("activation", "relu"),
+    ("linear", {"in_features": 256, "out_features": 64*8*8}),
+    ("activation", "relu")
+  ]
+
+  DEC_SPATIAL_MODEL_ARGS = [
+    ("upsample", {"scale_factor": 2}),
+    ("conv2d", {"in_channels": 64, "out_channels": 64, "kernel_size": 3, "padding": 1}),
+    ("activation", "relu"),
+    ("upsample", {"scale_factor": 2}),
+    ("conv2d", {"in_channels": 64, "out_channels": 32, "kernel_size": 3, "padding": 1}),
+    ("activation", "relu"),
+    ("upsample", {"scale_factor": 2}),
+    ("conv2d", {"in_channels": 32, "out_channels": 32, "kernel_size": 3, "padding": 1}),
+    ("activation", "relu"),
+    ("upsample", {"scale_factor": 2}),
+    ("conv2d", {"in_channels": 32, "out_channels": 3, "kernel_size": 3, "padding": 1}),
+    ("activation", "sigmoid")
+  ]
+
+  DEC_LINEAR_TO_SPATIAL_SHAPE = (64, 8, 8)
+
+elif DATA == "mnist":
+  LATENT_DIM = 16
+
+  ENC_MODEL_ARGS = [
+    ("conv2d", {"in_channels": 1, "out_channels": 64, "kernel_size": 4, "stride": 2}),
+    ("activation", "leakyrelu"),
+    ("conv2d", {"in_channels": 64, "out_channels": 128, "kernel_size": 4, "stride": 2}),
+    ("activation", "leakyrelu"),
+    ("flatten", None),
+    ("linear", {"in_features": 128*5*5, "out_features": 1024}),
+    ("activation", "leakyrelu"),
+    ("linear", {"in_features": 1024, "out_features": LATENT_DIM})
+  ]
+
+  DEC_LINEAR_MODEL_ARGS = [
+    ("linear", {"in_features": LATENT_DIM, "out_features": 1024}),
+    ("activation", "relu"),
+    ("linear", {"in_features": 1024, "out_features": 128*7*7}),
+  ]
+
+  DEC_SPATIAL_MODEL_ARGS = [
+    ("upsample", {"scale_factor": 2}),
+    ("conv2d", {"in_channels": 128, "out_channels": 64, "kernel_size": 3, "padding": 1}),
+    ("activation", "relu"),
+    ("upsample", {"scale_factor": 2}),
+    ("conv2d", {"in_channels": 64, "out_channels": 1, "kernel_size": 3, "padding": 1}),
+    ("activation", "sigmoid")
+  ]
+
+  DEC_LINEAR_TO_SPATIAL_SHAPE = (128, 7, 7)
+
 BATCH_SIZE = 128
 EPOCHS = 100
 LR = 1e-4
@@ -72,7 +111,7 @@ if DATA == "mnist":
   valid_ds = datasets.MNIST("data", train=False, download=True, transform=preprocessing)
 
   ## get the size
-  train_size = train_ds.shape[0]
+  train_size = len(train_ds)
   valid_size = int(0.5 * len(valid_ds))
   test_size  = len(valid_ds) - valid_size
 
@@ -102,15 +141,12 @@ elif DATA == "celeba":
 else:
   raise Exception("DATA is not recognized.")
 
-## take only the image part
-# train_ds = torch.cat([img.unsqueeze(0) for img, _ in train_ds]).to(DEVICE)
-# valid_ds = torch.cat([img.unsqueeze(0) for img, _ in valid_ds]).to(DEVICE)
-# test_ds = torch.cat([img.unsqueeze(0) for img, _ in test_ds]).to(DEVICE)
-
 ## create the dataloader
 train_dl = data.DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
 valid_dl = data.DataLoader(valid_ds, batch_size=BATCH_SIZE, shuffle=True)
 test_dl = data.DataLoader(test_ds, batch_size=BATCH_SIZE, shuffle=True)
+
+tqdm.tqdm.write("%s: %d training data, %d validation data, and %d test data." % (DATA, train_size, valid_size, test_size))
 
 ## ------------------ LOG CONFIGURATION ------------------
 
@@ -138,7 +174,7 @@ with open(LOG_DIR + "config.json", "w") as f:
 train_loss_epochs = []
 valid_loss_epochs = []
 
-best_loss = np.inf
+best_loss = float('Inf')
 early_stopping = EarlyStop(patience=PATIENCE)
 
 for epoch in tqdm.tqdm(range(EPOCHS)):
@@ -147,7 +183,7 @@ for epoch in tqdm.tqdm(range(EPOCHS)):
 
   ## training loop
   model.train()
-  for imgs, _ in train_dl:
+  for imgs, _ in tqdm.tqdm(train_dl, total=(train_size // BATCH_SIZE) + 1, leave=False, desc="Training"):
     model.zero_grad()
     imgs = imgs.to(DEVICE)
     
@@ -160,7 +196,7 @@ for epoch in tqdm.tqdm(range(EPOCHS)):
   ## validation loop
   model.eval()
   with torch.no_grad():
-    for imgs, _ in valid_dl:
+    for imgs, _ in tqdm.tqdm(valid_dl, total=(valid_size // BATCH_SIZE) + 1, leave=False, desc="Validation"):
       imgs = imgs.to(DEVICE)
       loss = model(imgs)
       valid_loss += loss.item() * imgs.shape[0]
@@ -203,8 +239,7 @@ d = torch.load(LOG_DIR + "best.pt", map_location=DEVICE)
 model.load_state_dict(d["model"])
 model.eval()
 
-tqdm.tqdm.write("Loading best model: epoch %02d & %0.4f validation loss" %
-  (d["epoch"], d["loss"].item()))
+tqdm.tqdm.write("Loading best model: epoch %02d & %0.4f validation loss" % (d["epoch"], d["valid_loss"]))
 
 ## testing loop using best model
 test_loss = 0
@@ -215,6 +250,14 @@ with torch.no_grad():
     test_loss += loss.item() * imgs.shape[0]
 
 tqdm.tqdm.write("Final Ts-Loss %0.4f" % (test_loss / test_size))
+
+## log losses to csv
+with open(LOG_DIR + "log.csv", "w") as f:
+  writer = csv.writer(f)
+  writer.writerow(['Training Loss', 'Validation Loss'])
+  for tl, vl in zip(train_loss_epochs, valid_loss_epochs):
+    writer.writerow(['%0.5f' % tl, '%0.5f' % vl])
+  writer.writerow(['%0.5f' % (test_loss / test_size)])
 
 ## ------------------ RECONSTRUCTION TEST ------------------
 
@@ -229,7 +272,7 @@ elif DATA == "celeba":
   cmap = None
 
 ## bacth the original image
-original_img = torch.cat([test_ds[i][0].unsqueeze(0) for i in idx])
+original_img = torch.cat([test_ds[i][0].unsqueeze(0) for i in idx]).to(DEVICE)
 
 ## reconstruction
 var_posterior = model.encoder(original_img)
