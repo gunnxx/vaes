@@ -1,6 +1,7 @@
 from typing import Any, Dict, List, Tuple
 
 import torch.nn as nn
+import src.model.residual_layer as rl
 
 ## just an alias
 model_args_dtype = List[Tuple[str, Dict[str, Any]]]
@@ -21,8 +22,12 @@ def instantiate_layer(ltype: str, lparams: Dict[str, Any]) -> nn.Module:
     layer = nn.Upsample(**lparams)
   elif ltype == "batchnorm2d":
     layer = nn.BatchNorm2d(**lparams)
+  elif ltype == "batchnorm1d":
+    layer = nn.BatchNorm1d(**lparams)
   elif ltype == "flatten":
     layer = nn.Flatten()
+  elif ltype == "residuallayer":
+    layer = rl.ResidualLayer(**lparams)
   
   ## activation function
   elif ltype == "activation":
