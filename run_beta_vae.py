@@ -12,11 +12,11 @@ from src.utils.early_stop import EarlyStop
 
 ## ------------------ HYPERPARAMETERS ------------------
 
-DATA, EXP_NUMBER = "celeba", "5"
+DATA, EXP_NUMBER = "cifar10", "0"
 LOG_DIR = "experiment/beta-vae/" + DATA + EXP_NUMBER + "/"
-DEVICE = torch.device("cuda:0")
+DEVICE = torch.device("cpu")
 
-BETA = 0.1
+BETA = 1
 
 if DATA == "celeba":
   LATENT_DIM = 32
@@ -91,8 +91,39 @@ elif DATA == "mnist":
 
   DEC_LINEAR_TO_SPATIAL_SHAPE = (128, 7, 7)
 
+elif DATA == "cifar10":
+  LATENT_DIM = 16
+
+  ENC_MODEL_ARGS = [
+    ("conv2d", {"in_channels": 3, "out_channels": 64, "kernel_size": 4, "stride": 2, "padding": 1}),
+    ("activation", "leakyrelu"),
+    ("conv2d", {"in_channels": 64, "out_channels": 128, "kernel_size": 4, "stride": 2, "padding": 1}),
+    ("activation", "leakyrelu"),
+    ("flatten", None),
+    ("linear", {"in_features": 128*8*8, "out_features": 1024}),
+    ("activation", "leakyrelu"),
+    ("linear", {"in_features": 1024, "out_features": LATENT_DIM})
+  ]
+
+  DEC_LINEAR_MODEL_ARGS = [
+    ("linear", {"in_features": LATENT_DIM, "out_features": 1024}),
+    ("activation", "relu"),
+    ("linear", {"in_features": 1024, "out_features": 128*8*8}),
+  ]
+
+  DEC_SPATIAL_MODEL_ARGS = [
+    ("upsample", {"scale_factor": 2}),
+    ("conv2d", {"in_channels": 128, "out_channels": 64, "kernel_size": 3, "padding": 1}),
+    ("activation", "relu"),
+    ("upsample", {"scale_factor": 2}),
+    ("conv2d", {"in_channels": 64, "out_channels": 3, "kernel_size": 3, "padding": 1}),
+    ("activation", "sigmoid")
+  ]
+
+  DEC_LINEAR_TO_SPATIAL_SHAPE = (128, 8, 8)
+
 BATCH_SIZE = 128
-EPOCHS = 100
+EPOCHS = 2
 LR = 1e-4
 PATIENCE = 10
 
@@ -137,6 +168,22 @@ elif DATA == "celeba":
   ## split the dataset
   partition = [train_size, valid_size, test_size]
   train_ds, valid_ds, test_ds = data.random_split(ds, partition, torch.Generator().manual_seed(42))
+
+elif DATA == "cifar10":
+  preprocessing = transforms.Compose([transforms.ToTensor()])
+
+  ## take MNIST dataset using `torchvision.datasets`
+  train_ds = datasets.CIFAR10("data", train=True, download=True, transform=preprocessing)
+  valid_ds = datasets.CIFAR10("data", train=False, download=True, transform=preprocessing)
+
+  ## get the size
+  train_size = len(train_ds)
+  valid_size = int(0.5 * len(valid_ds))
+  test_size  = len(valid_ds) - valid_size
+
+  ## split the dataset
+  partition = [valid_size, test_size]
+  valid_ds, test_ds = data.random_split(valid_ds, partition, torch.Generator().manual_seed(42))
 
 else:
   raise Exception("DATA is not recognized.")
@@ -266,7 +313,7 @@ if DATA == "mnist":
   idx = [1, 12, 24, 44, 47, 48, 52, 78, 84, 116]
   cmap = 'gray'
 
-elif DATA == "celeba":
+elif DATA == "celeba" or DATA == "cifar10":
   ## carefully picked to compare with other hyperparams
   idx = [8, 16, 32, 64]
   cmap = None
@@ -283,7 +330,7 @@ if DATA == "mnist":
   original_img = original_img.squeeze(1)
   reconstructed_img = reconstructed_img.squeeze(1)
 
-elif DATA == "celeba":
+elif DATA == "celeba" or DATA == "cifar10":
   original_img = original_img.moveaxis(1, -1)
   reconstructed_img = reconstructed_img.moveaxis(1, -1)
 
