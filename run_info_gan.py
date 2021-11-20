@@ -434,6 +434,7 @@ with open(LOG_DIR + "log.csv", "w") as f:
 
 gen_in = generate_noise_and_codes(NOISE_DIM, 10, DATA, DEVICE)
 generated_imgs = generator(torch.cat(gen_in, dim=-1))
+generated_imgs = (generated_imgs + 1) / 2
 
 ## change shape and convert to numpy to be visualized
 if DATA == "mnist":
