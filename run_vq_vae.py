@@ -262,7 +262,7 @@ elif DATA == "celeba" or DATA == "cifar10":
 
 with torch.no_grad():
   ## bacth the original image
-  imgs = torch.cat([valid_ds[i][0].unsqueeze(0) for i in idx])
+  imgs = torch.cat([valid_ds[i][0].unsqueeze(0) for i in idx]).to(DEVICE)
 
   ## reconstruction
   ze = encoder(imgs)
